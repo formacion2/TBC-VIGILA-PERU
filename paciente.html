@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>Control Diario - Paciente</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root { 
+            --primary: #0056b3; 
+            --secondary: #00a8cc; 
+            --danger: #ff4757; 
+            --warning: #ffa502;
+            --success: #2ed573;
+            --bg-color: #f4f7f6; 
+            --white: #fff; 
+            --text-dark: #2f3542;
+            --text-light: #747d8c;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        
+        body { 
+            background: linear-gradient(135deg, #f1f2f6 0%, #ffffff 100%);
+            min-height: 100vh; 
+            padding: 20px 15px; 
+            padding-bottom: 80px;
+            color: var(--text-dark);
+        }
+
+        .container { max-width: 500px; margin: 0 auto; position: relative; }
+        .app-logo-container { text-align: center; margin-bottom: 15px; }
+        .logo-img { max-width: 160px; height: auto; }
+
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .header h2 { color: var(--primary); font-size: 24px; font-weight: 800; letter-spacing: -0.5px;}
+        .header p { color: var(--text-light); font-size: 14px; font-weight: 500; }
+        
+        .header-actions { display: flex; gap: 10px; }
+        .btn-icon { background: var(--white); color: var(--primary); border: 1px solid #ddd; padding: 8px 12px; border-radius: 20px; font-size: 14px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .btn-logout { background: #ffeaa7; color: #d63031; border: none; padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: transform 0.2s; }
+        .btn-logout:active { transform: scale(0.95); }
+
+        .floating-card { background: var(--white); border-radius: 20px; padding: 25px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); border: 1px solid #f1f2f6; }
+
+        /* Semáforo e Info */
+        .semaforo-container { background: var(--white); border-radius: 16px; padding: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); display: flex; align-items: center; justify-content: space-between; }
+        .semaforo-texto { font-weight: 700; font-size: 14px; color: var(--text-dark); }
+        .luces { display: flex; gap: 8px; }
+        .luz { width: 18px; height: 18px; border-radius: 50%; background: #dfe4ea; transition: all 0.3s ease; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }
+        .luz.verde.active { background: var(--success); box-shadow: 0 0 10px var(--success); }
+        .luz.amarilla.active { background: var(--warning); box-shadow: 0 0 10px var(--warning); }
+        .luz.roja.active { background: var(--danger); box-shadow: 0 0 10px var(--danger); }
+
+        .info-title { font-size: 16px; font-weight: 800; color: var(--text-dark); margin-bottom: 12px; }
+        .image-slider { display: flex; overflow-x: auto; gap: 15px; scroll-snap-type: x mandatory; padding-bottom: 15px; margin-bottom: 15px; }
+        .image-slider::-webkit-scrollbar { display: none; } 
+        .slider-img { width: 85%; border-radius: 16px; scroll-snap-align: center; flex-shrink: 0; box-shadow: 0 5px 15px rgba(0,0,0,0.1); object-fit: contain; background: white; border: 1px solid #eee; }
+
+        .btn-start { width: 100%; background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; padding: 18px; border: none; border-radius: 15px; font-size: 18px; font-weight: 800; cursor: pointer; box-shadow: 0 8px 20px rgba(0, 86, 179, 0.25); transition: transform 0.2s; margin-bottom: 25px; }
+
+        .card-minsa { background: linear-gradient(135deg, #ffffff, #f0f9ff); border-left: 5px solid var(--secondary); padding: 20px;}
+        .card-minsa h3 { color: var(--primary); font-size: 16px; margin-bottom: 8px; }
+        .btn-minsa { background: var(--white); color: var(--primary); border: 2px solid var(--primary); padding: 12px; width: 100%; border-radius: 10px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        #mapaContenedor { display: none; width: 100%; height: 220px; margin-top: 15px; border-radius: 12px; overflow: hidden; border: 2px solid #eef2f5; }
+        #mapaContenedor iframe { width: 100%; height: 100%; border: none; }
+
+        /* WIZARD Y OPCIONES */
+        .step-card { display: none; animation: slideIn 0.4s ease forwards; }
+        .step-card.active { display: block; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        .floating-card label { display: block; font-weight: 800; margin-bottom: 15px; color: var(--text-dark); font-size: 17px; line-height: 1.3; }
+        .options-grid { display: grid; gap: 12px; }
+        .options-grid.two-cols { grid-template-columns: 1fr 1fr; }
+        .option-box { background: #f8f9fa; border: 2px solid #eef2f5; border-radius: 12px; padding: 16px 12px; text-align: center; cursor: pointer; transition: all 0.2s ease; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; -webkit-tap-highlight-color: transparent; }
+        .option-box .icon { font-size: 28px; }
+        .option-box .text { font-size: 14px; font-weight: 600; color: var(--text-dark); }
+        .option-box.selected { background: #e6f2ff; border-color: var(--primary); box-shadow: 0 4px 12px rgba(0,86,179,0.15); }
+        .option-box.selected .text { color: var(--primary); }
+        
+        .step-buttons { display: flex; gap: 10px; margin-top: 5px; margin-bottom: 30px; }
+        .btn-nav { flex: 1; padding: 16px; border: none; border-radius: 12px; font-size: 15px; font-weight: 800; cursor: pointer; }
+        .btn-prev { background: #e2e4e8; color: #2f3542; }
+        .btn-next { background: var(--secondary); color: white; display: none; }
+        .btn-primary { flex: 2; background: linear-gradient(135deg, var(--success), #20bf6b); color: white; box-shadow: 0 6px 15px rgba(46, 213, 115, 0.3); display: none; }
+        .step-indicator { text-align: center; color: var(--text-light); font-size: 13px; font-weight: bold; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px;}
+
+        /* CAMARA */
+        .camera-container { width: 100%; aspect-ratio: 3/4; background: #000; border-radius: 15px; overflow: hidden; position: relative; box-shadow: inset 0 0 10px rgba(0,0,0,0.5); }
+        .camera-video { width: 100%; height: 100%; object-fit: cover; }
+        .camera-preview { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 2; }
+        .camera-actions { display: flex; gap: 10px; margin-top: 15px; }
+
+        /* CITAS Y NAVEGACIÓN */
+        input[type="password"] { width: 100%; padding: 15px; border: 2px solid #eef2f5; border-radius: 12px; background: #fafafa; font-size: 14px; margin-bottom: 10px;}
+        select.input-select { width: 100%; padding: 15px; border: 2px solid #eef2f5; border-radius: 12px; font-size: 15px; background: #fafafa; margin-bottom: 15px; }
+        textarea { width: 100%; padding: 15px; border: 2px solid #eef2f5; border-radius: 12px; font-size: 15px; margin-bottom: 15px; resize: none; font-family: inherit;}
+        textarea:focus, select.input-select:focus, input[type="password"]:focus { outline: none; border-color: var(--secondary); }
+        .btn-submit-cita { background: var(--primary); color: white; border: none; padding: 15px; width: 100%; border-radius: 12px; font-weight: 800; font-size: 15px; cursor: pointer; box-shadow: 0 5px 15px rgba(0,86,179,0.2); }
+        
+        .cita-item { background: #f8f9fa; border: 1px solid #eee; border-radius: 12px; padding: 15px; margin-bottom: 12px; }
+        .cita-fecha { font-size: 12px; color: var(--text-light); margin-bottom: 5px; }
+        .cita-motivo { font-size: 15px; font-weight: bold; color: var(--text-dark); margin-bottom: 10px; }
+        .badge { display: inline-block; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; color: white; }
+        .badge.pendiente { background: var(--warning); } .badge.aceptada { background: var(--primary); } .badge.atendida { background: var(--success); } .badge.rechazada { background: var(--danger); }
+
+        .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); display: flex; justify-content: space-around; padding: 12px 0 20px 0; box-shadow: 0 -5px 20px rgba(0,0,0,0.05); border-radius: 25px 25px 0 0; z-index: 1000; }
+        .nav-item { text-align: center; color: var(--text-light); font-size: 12px; font-weight: 800; cursor: pointer; transition: color 0.3s; flex: 1;}
+        .nav-item.active { color: var(--primary); }
+        .nav-icon { font-size: 24px; display: block; margin-bottom: 4px; transition: transform 0.2s;}
+        .nav-item.active .nav-icon { transform: scale(1.2); }
+        .hidden { display: none !important; }
+        
+        /* Modales */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); justify-content: center; align-items: center; z-index: 2000; backdrop-filter: blur(5px); }
+        .modal-content { background: white; padding: 30px; border-radius: 24px; text-align: center; max-width: 85%; width: 340px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); animation: popUp 0.3s ease-out; }
+        .modal-content h3 { color: var(--primary); margin-bottom: 12px; }
+        .modal-btn { background: var(--secondary); width: 100%; padding: 14px; color: white; border: none; border-radius: 12px; font-weight: bold; margin-top: 10px; cursor: pointer; }
+        .modal-btn-cancel { background: #eee; color: #333; }
+        @keyframes popUp { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <div class="bottom-nav">
+        <div class="nav-item active" id="tabInicio" onclick="cambiarVista('inicio')">
+            <span class="nav-icon">🏠</span>Control Diario
+        </div>
+        <div class="nav-item" id="tabCitas" onclick="cambiarVista('citas')">
+            <span class="nav-icon">📅</span>Mis Citas
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="app-logo-container">
+            <img src="WhatsApp_Image_2026-06-28_at_9.19.38_PM-removebg-preview.png" alt="TBC Vigila Perú Logo" class="logo-img">
+        </div>
+
+        <div class="top-bar">
+            <div class="header">
+                <h2 id="saludoPaciente">Hola, Paciente</h2>
+                <p id="subtituloVista">Tu control diario de salud</p>
+            </div>
+            <div class="header-actions">
+                <button onclick="abrirModalPass()" class="btn-icon" title="Cambiar Contraseña">⚙️</button>
+                <button onclick="cerrarSesion()" class="btn-logout">Salir</button>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- VISTA DE INICIO (HOME)                     -->
+        <!-- ========================================== -->
+        <div id="vistaInicio">
+            <div class="semaforo-container">
+                <div class="semaforo-texto" id="textoSemaforo">Tu estado: Estable</div>
+                <div class="luces">
+                    <div class="luz verde active" id="luzVerde"></div>
+                    <div class="luz amarilla" id="luzAmarilla"></div>
+                    <div class="luz roja" id="luzRoja"></div>
+                </div>
+            </div>
+
+            <div class="info-title">📚 Información para ti (Desliza)</div>
+            <div class="image-slider">
+                <img src="ChatGPT Image 28 jun 2026, 23_53_08.png" alt="Conoce la TBC" class="slider-img">
+                <img src="ChatGPT Image 28 jun 2026, 23_54_36.png" alt="Señales de alerta" class="slider-img">
+                <img src="ChatGPT Image 28 jun 2026, 23_55_50.png" alt="Prevención TBC" class="slider-img">
+            </div>
+
+            <button class="btn-start" onclick="iniciarCuestionario()">Iniciar Control Diario 📝</button>
+
+            <div class="card-minsa floating-card">
+                <h3>📍 Emergencia o Consulta</h3>
+                <p style="font-size: 13px; color: #555;">Encuentra tu Centro de Salud MINSA más cercano.</p>
+                <button type="button" class="btn-minsa" onclick="ubicarMinsa()">Buscar Centro Médico</button>
+                <div id="mapaContenedor"><iframe id="mapaIframe"></iframe></div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- VISTA CITAS MÉDICAS                        -->
+        <!-- ========================================== -->
+        <div id="vistaCitas" class="hidden">
+            <div class="floating-card">
+                <label>📅 Solicitar Nueva Cita</label>
+                <p style="font-size: 13px; color: var(--text-light); margin-bottom: 15px;">Selecciona el motivo de tu cita médica.</p>
+                <select id="tipoCitaSelect" class="input-select" onchange="verificarTipoCita()">
+                    <option value="" disabled selected>Selecciona un motivo...</option>
+                    <option value="Control mensual de tratamiento">Control mensual de tratamiento</option>
+                    <option value="Efectos secundarios severos (Náuseas, Vómitos)">Efectos secundarios severos</option>
+                    <option value="Dolor fuerte en el pecho / Dificultad al respirar">Dolor en el pecho / Dificultad para respirar</option>
+                    <option value="Soporte Psicológico / Ansiedad">Soporte Psicológico / Ansiedad</option>
+                    <option value="Dudas sobre la medicación">Dudas sobre la medicación</option>
+                    <option value="OTRO">Otro motivo (Especificar)</option>
+                </select>
+                <textarea id="motivoCita" rows="3" placeholder="Escribe el detalle aquí..." class="hidden"></textarea>
+                <button class="btn-submit-cita" id="btnSolicitarCita" onclick="solicitarCita()">SOLICITAR CITA</button>
+            </div>
+
+            <div class="info-title" style="margin-top: 25px;">Historial de Solicitudes</div>
+            <div id="listaMisCitas">
+                <p style="text-align: center; color: var(--text-light); font-size: 14px;">Cargando tus citas...</p>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- VISTA DE CUESTIONARIO                      -->
+        <!-- ========================================== -->
+        <div id="vistaCuestionario" class="hidden">
+            <div class="step-indicator" id="textoPaso">Pregunta 1 de 5</div>
+            <form id="formDiario" onsubmit="enviarReporte(event)">
+                <input type="hidden" id="fisico" required>
+                <input type="hidden" id="emocional" required>
+                <input type="hidden" id="efectos" required>
+                <input type="hidden" id="pastilla" required>
+                <input type="hidden" id="evidenciaBase64">
+
+                <div class="floating-card step-card active">
+                    <label>1. ¿Cómo te sientes físicamente hoy?</label>
+                    <div class="options-grid">
+                        <div class="option-box" onclick="seleccionarOpcion('fisico', 'Bien', this)"><div class="icon">🔋</div><div class="text">Bien, con energía</div></div>
+                        <div class="option-box" onclick="seleccionarOpcion('fisico', 'Regular', this)"><div class="icon">⚖️</div><div class="text">Regular, algo cansado</div></div>
+                        <div class="option-box" onclick="seleccionarOpcion('fisico', 'Mal', this)"><div class="icon">🪫</div><div class="text">Mal, muy decaído</div></div>
+                    </div>
+                </div>
+
+                <div class="floating-card step-card">
+                    <label>2. ¿Cómo te sientes emocionalmente?</label>
+                    <div class="options-grid two-cols">
+                        <div class="option-box" onclick="seleccionarOpcion('emocional', 'Tranquilo/Motivado', this)"><div class="icon">✨</div><div class="text">Tranquilo / Motivado</div></div>
+                        <div class="option-box" onclick="seleccionarOpcion('emocional', 'Ansioso/Triste', this)"><div class="icon">🌪️</div><div class="text">Ansioso / Triste</div></div>
+                    </div>
+                </div>
+
+                <div class="floating-card step-card">
+                    <label>3. ¿Tienes algún efecto secundario?</label>
+                    <div class="options-grid two-cols">
+                        <div class="option-box" onclick="seleccionarOpcion('efectos', 'Ninguno', this)"><div class="icon">✅</div><div class="text">Ninguno</div></div>
+                        <div class="option-box" onclick="seleccionarOpcion('efectos', 'Nauseas', this)"><div class="icon">🤢</div><div class="text">Náuseas/Vómitos</div></div>
+                        <div class="option-box" onclick="seleccionarOpcion('efectos', 'Mareos', this)"><div class="icon">💫</div><div class="text">Mareos</div></div>
+                        <div class="option-box" onclick="seleccionarOpcion('efectos', 'Dolor', this)"><div class="icon">🦴</div><div class="text">Dolor articular</div></div>
+                    </div>
+                </div>
+
+                <div class="floating-card step-card">
+                    <label>4. ¿Tomaste tu pastilla correspondiente hoy?</label>
+                    <div class="options-grid two-cols">
+                        <div class="option-box" onclick="seleccionarOpcion('pastilla', 'SI', this)"><div class="icon">💊</div><div class="text">Sí, ya la tomé</div></div>
+                        <div class="option-box" onclick="seleccionarOpcion('pastilla', 'NO', this)"><div class="icon">🚫</div><div class="text">Aún no / No quiero</div></div>
+                    </div>
+                </div>
+
+                <!-- PASO 5: CÁMARA INTEGRADA -->
+                <div class="floating-card step-card">
+                    <label>5. Captura una foto tomando tu pastilla</label>
+                    <p style="font-size: 13px; color: var(--text-light); margin-bottom: 15px;">Apunta tu medicamento y presiona Capturar.</p>
+                    
+                    <div class="camera-container">
+                        <video id="videoCam" class="camera-video" autoplay playsinline></video>
+                        <img id="fotoPreview" class="camera-preview hidden">
+                    </div>
+                    
+                    <canvas id="canvasFoto" class="hidden"></canvas>
+
+                    <div class="camera-actions">
+                        <button type="button" id="btnTomarFoto" class="btn-minsa" style="background: var(--primary); color: white;" onclick="tomarFoto()">📸 Capturar Foto</button>
+                        <button type="button" id="btnRetomar" class="btn-minsa hidden" onclick="iniciarCamara()">🔄 Volver a intentar</button>
+                    </div>
+                </div>
+
+                <div class="step-buttons">
+                    <button type="button" class="btn-nav btn-prev" id="btnAtras" onclick="cambiarPaso(-1)" style="display: none;">Atrás</button>
+                    <button type="button" class="btn-nav btn-next" id="btnSiguiente" onclick="cambiarPaso(1)">Siguiente</button>
+                    <button type="submit" class="btn-nav btn-primary" id="btnEnviar">ENVIAR REPORTE</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modales de Ayuda e Intervención -->
+    <div id="modalAyuda" class="modal">
+        <div class="modal-content">
+            <h3 id="modalTitulo">💡 Tip de Autocuidado</h3>
+            <p id="textoAyuda"></p>
+            <button class="modal-btn" onclick="cerrarModalAyuda()">Entendido, gracias</button>
+        </div>
+    </div>
+
+    <div id="modalNoPastilla" class="modal">
+        <div class="modal-content">
+            <h3 style="color: var(--danger);">⚠️ Importante</h3>
+            <p style="font-size: 14px; margin-bottom: 15px;">Notamos que indicaste <strong>NO</strong> haber tomado tu pastilla. Es vital para tu curación que no interrumpas el tratamiento.</p>
+            <p style="font-size: 14px; margin-bottom: 20px; font-weight: bold; color: var(--primary);">Por favor, toma tu medicamento y vuelve para tomar la foto de evidencia.</p>
+            <button class="modal-btn" style="background: var(--success);" onclick="corregirPastilla()">✅ Ya la tomé (Continuar)</button>
+            <button class="modal-btn modal-btn-cancel" onclick="enviarReporteSinFoto()">❌ No la tomaré hoy (Enviar Alerta Roja)</button>
+        </div>
+    </div>
+
+    <div id="modalPassword" class="modal">
+        <div class="modal-content">
+            <h3>🔒 Cambiar Contraseña</h3>
+            <p style="font-size: 14px; margin-bottom: 15px; color: #555;">Tu contraseña actual es tu número de DNI. Ingresa tu nueva contraseña aquí:</p>
+            <input type="password" id="nuevaPass" placeholder="Nueva Contraseña" required>
+            <button class="modal-btn" onclick="guardarNuevaContrasena()">Actualizar Contraseña</button>
+            <button class="modal-btn modal-btn-cancel" onclick="cerrarModalPass()">Cancelar</button>
+        </div>
+    </div>
+
+    <script>
+        const supabaseUrl = 'https://idwpapyrfezyoyjhphtm.supabase.co'; 
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlkd3BhcHlyZmV6eW95amhwaHRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2NTYzODMsImV4cCI6MjA5ODIzMjM4M30.o7Fl3U_3ipaAPMX2QbK0LRoQkboP3ntpTzNBtFKVEeY';        
+        const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+        let usuarioActual = JSON.parse(localStorage.getItem('tbc_usuario'));
+        if(!usuarioActual || usuarioActual.rol !== 'PACIENTE') window.location.href = 'index.html';
+        
+        document.getElementById('saludoPaciente').textContent = `Hola, ${usuarioActual.nombres.split(" ")[0]}`;
+
+        function cerrarSesion() { detenerCamara(); localStorage.removeItem('tbc_usuario'); window.location.href = 'index.html'; }
+
+        // --- GESTIÓN DE CONTRASEÑA ---
+        function abrirModalPass() { document.getElementById('modalPassword').style.display = 'flex'; }
+        function cerrarModalPass() { document.getElementById('modalPassword').style.display = 'none'; document.getElementById('nuevaPass').value = ''; }
+        
+        async function guardarNuevaContrasena() {
+            const nueva = document.getElementById('nuevaPass').value.trim();
+            if(nueva.length < 4) { alert("La contraseña debe tener al menos 4 caracteres."); return; }
+            try {
+                const { error } = await supabaseClient.from('usuarios_tbc').update({ dni: nueva }).eq('id', usuarioActual.id);
+                if (error) throw error;
+                alert("¡Contraseña actualizada con éxito! Úsala en tu próximo inicio de sesión.");
+                usuarioActual.dni = nueva; localStorage.setItem('tbc_usuario', JSON.stringify(usuarioActual)); cerrarModalPass();
+            } catch(e) { alert("Error al actualizar la contraseña."); }
+        }
+
+        // --- SISTEMA DE NAVEGACIÓN ---
+        function cambiarVista(vista) {
+            document.getElementById('vistaInicio').classList.add('hidden');
+            document.getElementById('vistaCuestionario').classList.add('hidden');
+            document.getElementById('vistaCitas').classList.add('hidden');
+            document.getElementById('tabInicio').classList.remove('active');
+            document.getElementById('tabCitas').classList.remove('active');
+            detenerCamara(); // Apagar cámara si el usuario sale del formulario
+
+            if(vista === 'inicio') {
+                document.getElementById('vistaInicio').classList.remove('hidden');
+                document.getElementById('tabInicio').classList.add('active');
+                document.getElementById('subtituloVista').textContent = 'Tu control diario de salud';
+            } else if(vista === 'citas') {
+                document.getElementById('vistaCitas').classList.remove('hidden');
+                document.getElementById('tabCitas').classList.add('active');
+                document.getElementById('subtituloVista').textContent = 'Gestión de citas médicas';
+                cargarMisCitas();
+            }
+            window.scrollTo(0, 0);
+        }
+
+        function iniciarCuestionario() {
+            document.getElementById('vistaInicio').classList.add('hidden');
+            document.getElementById('vistaCuestionario').classList.remove('hidden');
+            window.scrollTo(0, 0);
+        }
+
+        // --- CITAS MÉDICAS ---
+        function verificarTipoCita() {
+            const select = document.getElementById('tipoCitaSelect');
+            const textarea = document.getElementById('motivoCita');
+            if(select.value === 'OTRO') { textarea.classList.remove('hidden'); } 
+            else { textarea.classList.add('hidden'); }
+        }
+
+        async function solicitarCita() {
+            const selectValor = document.getElementById('tipoCitaSelect').value;
+            let motivoFinal = "";
+
+            if (!selectValor) { alert('Por favor, selecciona un motivo para tu cita.'); return; }
+            if (selectValor === 'OTRO') {
+                motivoFinal = document.getElementById('motivoCita').value.trim();
+                if(!motivoFinal) { alert('Por favor, escribe el detalle de tu cita.'); return; }
+            } else { motivoFinal = selectValor; }
+
+            const btn = document.getElementById('btnSolicitarCita');
+            btn.textContent = 'Enviando...'; btn.disabled = true;
+
+            const datosCita = {
+                celular_paciente: usuarioActual.celular,
+                nombres_paciente: `${usuarioActual.nombres} ${usuarioActual.apellidos}`,
+                motivo_cita: motivoFinal, estado: 'PENDIENTE'
+            };
+
+            try {
+                const { error } = await supabaseClient.from('citas_medicas').insert([datosCita]);
+                if(error) throw error;
+                alert('Solicitud enviada con éxito. El equipo de soporte evaluará tu solicitud.');
+                document.getElementById('tipoCitaSelect').value = '';
+                document.getElementById('motivoCita').value = '';
+                document.getElementById('motivoCita').classList.add('hidden');
+                cargarMisCitas();
+            } catch(e) { alert('Error al solicitar cita.'); } 
+            finally { btn.textContent = 'SOLICITAR CITA'; btn.disabled = false; }
+        }
+
+        async function cargarMisCitas() {
+            const contenedor = document.getElementById('listaMisCitas');
+            try {
+                const { data, error } = await supabaseClient.from('citas_medicas').select('*').eq('celular_paciente', usuarioActual.celular).order('fecha_registro', { ascending: false });
+                if (error) throw error;
+                if (data.length === 0) { contenedor.innerHTML = '<p style="text-align: center; color: var(--text-light); font-size: 14px;">Aún no has solicitado citas.</p>'; return; }
+
+                contenedor.innerHTML = '';
+                data.forEach(cita => {
+                    const fecha = new Date(cita.fecha_registro).toLocaleString('es-PE', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+                    let claseBadge = 'pendiente';
+                    if(cita.estado === 'ACEPTADA') claseBadge = 'aceptada';
+                    if(cita.estado === 'ATENDIDA') claseBadge = 'atendida';
+                    if(cita.estado === 'RECHAZADA') claseBadge = 'rechazada';
+
+                    contenedor.innerHTML += `
+                        <div class="cita-item">
+                            <div class="cita-fecha">📅 Solicitado: ${fecha}</div>
+                            <div class="cita-motivo">${cita.motivo_cita}</div>
+                            <div>Estado: <span class="badge ${claseBadge}">${cita.estado}</span></div>
+                        </div>`;
+                });
+            } catch (error) { contenedor.innerHTML = '<p style="text-align:center;color:red;">Error cargando citas.</p>'; }
+        }
+
+        // --- SISTEMA DE CÁMARA (NUEVO) ---
+        let streamCamara = null;
+
+        async function iniciarCamara() {
+            const video = document.getElementById('videoCam');
+            document.getElementById('fotoPreview').classList.add('hidden');
+            video.classList.remove('hidden');
+            document.getElementById('btnTomarFoto').classList.remove('hidden');
+            document.getElementById('btnRetomar').classList.add('hidden');
+            document.getElementById('evidenciaBase64').value = '';
+
+            try {
+                streamCamara = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                video.srcObject = streamCamara;
+            } catch (err) {
+                alert("Para continuar necesitas permitir el acceso a tu cámara.");
+            }
+        }
+
+        function detenerCamara() {
+            if (streamCamara) {
+                streamCamara.getTracks().forEach(track => track.stop());
+                streamCamara = null;
+            }
+        }
+
+        function tomarFoto() {
+            const video = document.getElementById('videoCam');
+            const canvas = document.getElementById('canvasFoto');
+            const context = canvas.getContext('2d');
+
+            // Comprimir la imagen para que sea ligera (Ancho max: 400px)
+            const anchoDeseado = 400;
+            const altoDeseado = (video.videoHeight / video.videoWidth) * anchoDeseado;
+            
+            canvas.width = anchoDeseado;
+            canvas.height = altoDeseado;
+            context.drawImage(video, 0, 0, anchoDeseado, altoDeseado);
+            
+            // Convertir a Base64 comprimido (JPEG 60% calidad)
+            const fotoComprimida = canvas.toDataURL('image/jpeg', 0.6);
+            document.getElementById('evidenciaBase64').value = fotoComprimida;
+            
+            // Mostrar previsualización
+            const preview = document.getElementById('fotoPreview');
+            preview.src = fotoComprimida;
+            preview.classList.remove('hidden');
+            video.classList.add('hidden');
+            
+            document.getElementById('btnTomarFoto').classList.add('hidden');
+            document.getElementById('btnRetomar').classList.remove('hidden');
+            
+            detenerCamara(); // Apagar cámara para ahorrar batería
+        }
+
+        // --- LÓGICA WIZARD DIARIO ---
+        let pasoActual = 0;
+        const tarjetas = document.querySelectorAll('.step-card');
+        
+        function seleccionarOpcion(campoId, valor, elementoCaja) {
+            document.getElementById(campoId).value = valor;
+            const grid = elementoCaja.parentElement;
+            const cajas = grid.querySelectorAll('.option-box');
+            cajas.forEach(c => c.classList.remove('selected'));
+            elementoCaja.classList.add('selected');
+
+            if (campoId === 'efectos') verificarEfectosInmediatos(valor);
+            setTimeout(() => { if (pasoActual < tarjetas.length - 1) cambiarPaso(1); }, 400);
+        }
+
+        function cambiarPaso(direccion) {
+            if (direccion === 1) {
+                const inputsEnPaso = tarjetas[pasoActual].querySelectorAll('input[type="hidden"]');
+                if (inputsEnPaso.length > 0 && !inputsEnPaso[0].value) { alert("Selecciona una opción para continuar."); return; }
+                
+                // Interceptar Paso 4 (¿Tomaste pastilla?)
+                if (pasoActual === 3) {
+                    const pastillaValue = document.getElementById('pastilla').value;
+                    if (pastillaValue === 'NO') {
+                        document.getElementById('modalNoPastilla').style.display = 'flex';
+                        return; // Bloquea el avance hacia la cámara
+                    }
+                }
+            }
+            pasoActual += direccion;
+            actualizarVistaPasos();
+        }
+
+        function actualizarVistaPasos() {
+            tarjetas.forEach((tarjeta, index) => { tarjeta.classList.toggle('active', index === pasoActual); });
+            document.getElementById('textoPaso').textContent = `Pregunta ${pasoActual + 1} de ${tarjetas.length}`;
+            document.getElementById('btnAtras').style.display = pasoActual === 0 ? 'none' : 'block';
+            
+            // Control cámara y botones de envío
+            if (pasoActual === tarjetas.length - 1) {
+                document.getElementById('btnSiguiente').style.display = 'none';
+                document.getElementById('btnEnviar').style.display = 'block';
+                iniciarCamara(); // Encender cámara al llegar al último paso
+            } else {
+                document.getElementById('btnSiguiente').style.display = 'none'; 
+                document.getElementById('btnEnviar').style.display = 'none';
+                detenerCamara(); // Apagar cámara si retrocede
+            }
+        }
+        actualizarVistaPasos();
+
+        // Acciones Modal "NO TOMÓ PASTILLA"
+        function corregirPastilla() {
+            document.getElementById('modalNoPastilla').style.display = 'none';
+            // Simular click en "SÍ" para corregir y avanzar
+            const opcionSi = document.querySelector('.option-box[onclick*="\'pastilla\', \'SI\'"]');
+            seleccionarOpcion('pastilla', 'SI', opcionSi);
+        }
+
+        function enviarReporteSinFoto() {
+            document.getElementById('modalNoPastilla').style.display = 'none';
+            enviarReporte(null, true); // Pasar "true" para forzar el envío sin cámara
+        }
+
+        function evaluarSemaforo() {
+            const fisico = document.getElementById('fisico').value; const emocional = document.getElementById('emocional').value;
+            const efectos = document.getElementById('efectos').value; const pastilla = document.getElementById('pastilla').value;
+            const luzV = document.getElementById('luzVerde'); const luzA = document.getElementById('luzAmarilla'); const luzR = document.getElementById('luzRoja'); const texto = document.getElementById('textoSemaforo');
+            luzV.classList.remove('active'); luzA.classList.remove('active'); luzR.classList.remove('active');
+
+            if (fisico === 'Mal' || emocional === 'Ansioso/Triste' || pastilla === 'NO') {
+                luzR.classList.add('active'); texto.textContent = "Alerta: Requiere Apoyo"; texto.style.color = "var(--danger)";
+            } else if (fisico === 'Regular' || (efectos && efectos !== 'Ninguno' && efectos !== '')) {
+                luzA.classList.add('active'); texto.textContent = "Precaución: Efectos leves"; texto.style.color = "var(--warning)";
+            } else {
+                luzV.classList.add('active'); texto.textContent = "Estado: Estable"; texto.style.color = "var(--success)";
+            }
+        }
+
+        function verificarEfectosInmediatos(efecto) {
+            const modal = document.getElementById('modalAyuda'); const texto = document.getElementById('textoAyuda');
+            if(efecto === 'Nauseas') { texto.textContent = "Para las náuseas: Intenta comer galletas de soda o toma sorbos de agua con kión. Evita recostarte después de comer."; modal.style.display = 'flex'; } 
+            else if (efecto === 'Mareos') { texto.textContent = "Para los mareos: Siéntate o acuéstate despacio. Asegúrate de tomar agua."; modal.style.display = 'flex'; }
+        }
+        function cerrarModalAyuda() { document.getElementById('modalAyuda').style.display = 'none'; }
+
+        function ubicarMinsa() {
+            if (navigator.geolocation) {
+                const btn = document.querySelector('.btn-minsa'); btn.textContent = "Buscando... 📍"; btn.disabled = true;
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const iframe = document.getElementById('mapaIframe');
+                        iframe.src = `https://maps.google.com/maps?q=Centro+de+salud+MINSA&ll=${position.coords.latitude},${position.coords.longitude}&z=14&output=embed`;
+                        document.getElementById('mapaContenedor').style.display = 'block';
+                        btn.textContent = "Ubicación Actualizada ✅"; btn.disabled = false;
+                    },
+                    () => { alert("Activa tu GPS y dale permisos a la página."); btn.textContent = "Buscar Centro Médico"; btn.disabled = false; }
+                );
+            } else { alert("Tu navegador no soporta mapas."); }
+        }
+
+        async function enviarReporte(event, enviarSinFoto = false) {
+            if(event) event.preventDefault();
+            
+            // Validar foto si es un envío normal
+            if (!enviarSinFoto) {
+                const inputEvidencia = document.getElementById('evidenciaBase64');
+                if (!inputEvidencia.value) { alert("¡Hey! No olvides capturar tu foto para finalizar el reporte."); return; }
+            }
+
+            const btnEnv = document.getElementById('btnEnviar'); 
+            if(btnEnv) { btnEnv.textContent = 'Enviando...'; btnEnv.disabled = true; }
+
+            const fisico = document.getElementById('fisico').value; const emocional = document.getElementById('emocional').value;
+            const efectos = document.getElementById('efectos').value; const pastilla = document.getElementById('pastilla').value;
+            
+            // Si envía sin foto, la foto queda en null
+            const base64Final = enviarSinFoto ? null : document.getElementById('evidenciaBase64').value;
+            let alertaFinal = (emocional === 'Ansioso/Triste' || pastilla === 'NO') ? 'ROJO' : 'VERDE';
+
+            const datosReporte = {
+                celular_paciente: usuarioActual.celular, nombres_paciente: `${usuarioActual.nombres} ${usuarioActual.apellidos}`,
+                estado_fisico: fisico, estado_emocional: emocional, efectos_secundarios: efectos, tomo_pastilla: pastilla, nivel_alerta: alertaFinal,
+                evidencia_base64: base64Final
+            };
+
+            try {
+                const { error } = await supabaseClient.from('registros_diarios').insert([datosReporte]);
+                if(error) throw error;
+                alert(alertaFinal === 'ROJO' ? "Reporte guardado en ALERTA. Nuestro equipo de soporte te contactará muy pronto para apoyarte." : "¡Excelente! Registraste tu dosis con éxito. Sigue así.");
+                
+                document.getElementById('formDiario').reset();
+                document.getElementById('evidenciaBase64').value = '';
+                document.querySelectorAll('.option-box').forEach(b => b.classList.remove('selected'));
+                
+                detenerCamara();
+                evaluarSemaforo(); 
+                cambiarVista('inicio'); 
+                pasoActual = 0; 
+                actualizarVistaPasos();
+            } catch(e) { alert('Error de conexión al enviar el reporte. Intenta de nuevo.'); } 
+            finally { if(btnEnv) { btnEnv.textContent = 'ENVIAR REPORTE'; btnEnv.disabled = false; } }
+        }
+    </script>
+</body>
+</html>
